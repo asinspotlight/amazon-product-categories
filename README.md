@@ -1,12 +1,12 @@
 # Amazon Product Categories — Complete Tree
 
-Built with Python using the [ASINSpotlight Scraping API](https://asinspotlight.com).
+Built with Python using the [ASINSpotlight Scraping API](https://www.asinspotlight.com/api).
 
 Discovers all Amazon US product categories by recursively crawling the Best Sellers tree. The entire scraper is ~200 lines of Python — the API does the heavy lifting.
 
 ## Download
 
-- **Latest CSV** — see [Releases](../../releases)
+- **Latest CSV** — [Download](https://www.asinspotlight.com/amz-categories-list-csv)
 - **Browse online** — [ASINSpotlight Categories Browser](https://asinspotlight.com/amazon-categories-browser)
 
 ## How it works
@@ -17,7 +17,7 @@ The tool starts at Amazon's top-level Best Sellers page and recursively follows 
 
 The API parses any Amazon page into structured JSON. It handles proxies, rate limiting, and anti-bot measures so you don't have to.
 
-[Get API access →](https://asinspotlight.com)
+[Get API access →](https://www.asinspotlight.com/api)
 
 ## Quick start
 
