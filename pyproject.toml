@@ -1,0 +1,12 @@
+[project]
+name = "amazon-product-categories"
+version = "0.1.0"
+description = "Discover all Amazon US product categories by crawling the Best Sellers tree"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx",
+    "python-dotenv",
+]
+
+[project.scripts]
+crawl = "crawl:main"
