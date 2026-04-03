@@ -8,6 +8,8 @@ Best Sellers pages via the ASINSpotlight Scraping API.
 import csv
 import os
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -22,6 +24,7 @@ API_URL = os.environ.get("ASINSPOTLIGHT_API_URL", "https://api.asinspotlight.com
 SEED_URL = "https://www.amazon.com/Best-Sellers/zgbs"
 OUTPUT_DIR = Path("output")
 STATE_FILE = OUTPUT_DIR / "categories.csv"
+WORKERS = int(os.environ.get("CRAWL_WORKERS", "5"))
 
 CSV_FIELDS = ["category_id", "category_name", "parent_path", "url", "status"]
 
@@ -110,34 +113,79 @@ def enqueue(state: dict, url: str, parent_path: str = "") -> None:
 def crawl() -> None:
     """Main crawl loop: resume from state, process pending URLs."""
     state = load_state()
+    lock = threading.Lock()
+    save_counter = 0
+
+    # Reset any in_progress rows from a previous interrupted run
+    for row in state.values():
+        if row["status"] == "in_progress":
+            row["status"] = "pending"
 
     if not state:
         enqueue(state, SEED_URL)
 
-    while pending := [u for u, r in state.items() if r["status"] == "pending"]:
-        url = pending[0]
-        print(f"[{len(state) - len(pending)}/{len(state)}] {url}")
+    def pick_url() -> str | None:
+        """Grab the next pending URL and mark it in_progress."""
+        for url, row in state.items():
+            if row["status"] == "pending":
+                row["status"] = "in_progress"
+                return url
+        return None
 
+    def process(url: str) -> None:
+        nonlocal save_counter
         try:
             result = fetch_and_parse(url)
         except Exception as e:
+            with lock:
+                state[url]["status"] = "pending"
             print(f"  error: {e}")
-            continue
+            return
 
-        row = state[url]
-        row["category_id"] = extract_category_id(url)
-        row["category_name"] = result.get("category_name", row["category_id"])
-        row["status"] = "done"
+        with lock:
+            row = state[url]
+            row["category_id"] = extract_category_id(url)
+            row["category_name"] = result.get("category_name", row["category_id"])
+            row["status"] = "done"
 
-        parent = row["parent_path"]
-        child_prefix = f"{parent} > {row['category_name']}" if parent else row["category_name"]
+            parent = row["parent_path"]
+            child_prefix = f"{parent} > {row['category_name']}" if parent else row["category_name"]
 
-        for dept in result.get("departments", []) + result.get("sub_departments", []):
-            enqueue(state, dept["link"], child_prefix)
+            for dept in result.get("departments", []) + result.get("sub_departments", []):
+                enqueue(state, dept["link"], child_prefix)
 
-        save_state(state)
+            save_counter += 1
+            if save_counter % WORKERS == 0:
+                save_state(state)
 
-    print(f"Done. {len(state)} categories discovered.")
+    done = sum(1 for r in state.values() if r["status"] == "done")
+    total = len(state)
+    print(f"Resuming: {done} done, {total - done} remaining, {WORKERS} workers")
+
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        while True:
+            with lock:
+                urls = []
+                for _ in range(WORKERS):
+                    url = pick_url()
+                    if url:
+                        urls.append(url)
+
+            if not urls:
+                break
+
+            done = sum(1 for r in state.values() if r["status"] == "done")
+            print(f"[{done}/{len(state)}] dispatching {len(urls)} URLs")
+
+            futures = [pool.submit(process, url) for url in urls]
+            for f in as_completed(futures):
+                f.result()
+
+        with lock:
+            save_state(state)
+
+    done = sum(1 for r in state.values() if r["status"] == "done")
+    print(f"Done. {done} categories crawled, {len(state)} total URLs.")
 
 
 def main():
