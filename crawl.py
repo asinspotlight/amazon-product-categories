@@ -7,6 +7,7 @@ Best Sellers pages via the ASINSpotlight Scraping API.
 
 import csv
 import os
+import re
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -44,21 +45,58 @@ def save_state(state: dict[str, dict]) -> None:
 
 def extract_category_id(url: str) -> str:
     """Extract category identifier from a Best Sellers URL path."""
-    # e.g. /zgbs/automotive/ -> automotive
-    # e.g. /zgbs/electronics/1266092011 -> 1266092011
-    parts = url.rstrip("/").split("/")
+    # e.g. /zgbs/automotive/ref=... -> automotive
+    # e.g. /zgbs/electronics/1266092011/ref=... -> 1266092011
+    parts = [p for p in url.rstrip("/").split("/") if not p.startswith("ref=")]
     return parts[-1] if parts else ""
 
 
 def fetch_and_parse(url: str) -> dict:
     """Send a URL to the ASINSpotlight API and return parsed result."""
-    # TODO: implement API call — send URL, receive departments + sub_departments
-    raise NotImplementedError
+    resp = httpx.post(
+        f"{API_URL}/v1/scrape",
+        json={"url": url, "marketplace": "us"},
+        headers={"X-Api-Key": API_KEY},
+        timeout=90,
+    )
+    body = resp.json()
+
+    if not body.get("success"):
+        error = body.get("error", {})
+        code = error.get("code", "UNKNOWN")
+        if code == "PAGE_NOT_FOUND":
+            return {"category_name": "", "departments": [], "sub_departments": []}
+        raise RuntimeError(f"{code}: {error.get('message', 'Request failed')}")
+
+    data = body["data"]
+    return {
+        "category_name": clean_category_name(data.get("title", "")),
+        "departments": data.get("departments", []),
+        "sub_departments": data.get("sub_departments", []),
+    }
+
+
+def clean_category_name(title: str) -> str:
+    """Strip Amazon boilerplate from page titles."""
+    # "Amazon Best Sellers: Best Electronics" -> "Electronics"
+    # "Amazon.com Best Sellers: The most popular items on Amazon" -> ""
+    cleaned = re.sub(
+        r"^Amazon(?:\.com)? Best Sellers:?\s*(?:Best\s+|The most popular items on Amazon)?",
+        "", title,
+    ).strip()
+    return cleaned
+
+
+def normalize_url(url: str) -> str:
+    """Strip ref= tracking segments from Amazon URLs for deduplication."""
+    absolute = urljoin("https://www.amazon.com", url)
+    parts = absolute.split("/")
+    return "/".join(p for p in parts if not p.startswith("ref="))
 
 
 def enqueue(state: dict, url: str, parent_path: str = "") -> None:
     """Add a URL to state if not already tracked."""
-    absolute = urljoin("https://www.amazon.com", url)
+    absolute = normalize_url(url)
     if absolute not in state:
         state[absolute] = {
             "category_id": "",
