@@ -48,9 +48,14 @@ MARKETPLACES = {
     "tr": "www.amazon.com.tr",
 }
 
+# Marketplaces where the Best Sellers landing page differs from the default
+SEED_PATHS = {
+    "de": "/gp/bestsellers",
+}
+
 MARKETPLACE = os.environ.get("MARKETPLACE", "us").lower()
 DOMAIN = MARKETPLACES[MARKETPLACE]
-SEED_URL = f"https://{DOMAIN}/Best-Sellers/zgbs"
+SEED_URL = f"https://{DOMAIN}{SEED_PATHS.get(MARKETPLACE, '/Best-Sellers/zgbs')}"
 OUTPUT_DIR = Path("output")
 STATE_FILE = OUTPUT_DIR / f"categories_{MARKETPLACE}.csv"
 WORKERS = int(os.environ.get("CRAWL_WORKERS", "5"))
@@ -234,7 +239,7 @@ def main():
 
     MARKETPLACE = args.marketplace
     DOMAIN = MARKETPLACES[MARKETPLACE]
-    SEED_URL = f"https://{DOMAIN}/Best-Sellers/zgbs"
+    SEED_URL = f"https://{DOMAIN}{SEED_PATHS.get(MARKETPLACE, '/Best-Sellers/zgbs')}"
     STATE_FILE = OUTPUT_DIR / f"categories_{MARKETPLACE}.csv"
 
     print(f"Marketplace: {MARKETPLACE} ({DOMAIN})")
