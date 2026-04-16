@@ -2,7 +2,7 @@
 
 Built with Python using the [ASINSpotlight Scraping API](https://www.asinspotlight.com/api).
 
-Discovers all Amazon US product categories by recursively crawling the Best Sellers tree. The entire scraper is ~200 lines of Python — the API does the heavy lifting.
+Discovers all Amazon product categories by recursively crawling the Best Sellers tree. Supports 20 marketplaces (US, UK, CA, DE, FR, JP, and more). The entire scraper is a single Python file — the API does the heavy lifting.
 
 ## Download
 
@@ -35,7 +35,18 @@ cp .env.example .env
 python crawl.py
 ```
 
-Output is saved to `output/categories.csv`. The crawl is resumable — restart and it picks up where it left off.
+### Other marketplaces
+
+```bash
+python crawl.py --marketplace uk
+python crawl.py -m de
+```
+
+Supported: `us`, `uk`, `ca`, `de`, `fr`, `it`, `es`, `jp`, `au`, `in`, `mx`, `br`, `nl`, `se`, `pl`, `be`, `sg`, `sa`, `ae`, `tr`.
+
+You can also set the `MARKETPLACE` env var instead of the flag.
+
+Output is saved to `output/categories_{marketplace}.csv` (e.g. `categories_uk.csv`). Each marketplace has its own state file, so crawls are independent and resumable.
 
 ## License
 

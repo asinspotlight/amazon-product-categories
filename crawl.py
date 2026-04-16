@@ -1,10 +1,14 @@
 """
 Amazon Product Categories — Complete Tree
 
-Discovers all Amazon US product categories by recursively crawling
+Discovers all Amazon product categories by recursively crawling
 Best Sellers pages via the ASINSpotlight Scraping API.
+
+Supports multiple marketplaces (US, UK, CA, DE, etc.) via the
+MARKETPLACE environment variable or --marketplace CLI flag.
 """
 
+import argparse
 import csv
 import os
 import re
@@ -21,9 +25,34 @@ load_dotenv()
 API_KEY = os.environ["ASINSPOTLIGHT_API_KEY"]
 API_URL = os.environ.get("ASINSPOTLIGHT_API_URL", "https://api.asinspotlight.com")
 
-SEED_URL = "https://www.amazon.com/Best-Sellers/zgbs"
+MARKETPLACES = {
+    "us": "www.amazon.com",
+    "uk": "www.amazon.co.uk",
+    "ca": "www.amazon.ca",
+    "de": "www.amazon.de",
+    "fr": "www.amazon.fr",
+    "it": "www.amazon.it",
+    "es": "www.amazon.es",
+    "jp": "www.amazon.co.jp",
+    "au": "www.amazon.com.au",
+    "in": "www.amazon.in",
+    "mx": "www.amazon.com.mx",
+    "br": "www.amazon.com.br",
+    "nl": "www.amazon.nl",
+    "se": "www.amazon.se",
+    "pl": "www.amazon.pl",
+    "be": "www.amazon.com.be",
+    "sg": "www.amazon.sg",
+    "sa": "www.amazon.sa",
+    "ae": "www.amazon.ae",
+    "tr": "www.amazon.com.tr",
+}
+
+MARKETPLACE = os.environ.get("MARKETPLACE", "us").lower()
+DOMAIN = MARKETPLACES[MARKETPLACE]
+SEED_URL = f"https://{DOMAIN}/Best-Sellers/zgbs"
 OUTPUT_DIR = Path("output")
-STATE_FILE = OUTPUT_DIR / "categories.csv"
+STATE_FILE = OUTPUT_DIR / f"categories_{MARKETPLACE}.csv"
 WORKERS = int(os.environ.get("CRAWL_WORKERS", "5"))
 
 CSV_FIELDS = ["category_id", "category_name", "parent_path", "url", "status"]
@@ -58,10 +87,12 @@ def fetch_and_parse(url: str) -> dict:
     """Send a URL to the ASINSpotlight API and return parsed result."""
     resp = httpx.post(
         f"{API_URL}/v1/scrape",
-        json={"url": url, "marketplace": "us"},
+        json={"url": url, "marketplace": MARKETPLACE},
         headers={"X-Api-Key": API_KEY},
         timeout=90,
     )
+    if resp.status_code != 200:
+        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:200]}")
     body = resp.json()
 
     if not body.get("success"):
@@ -84,15 +115,16 @@ def clean_category_name(title: str) -> str:
     # "Amazon Best Sellers: Best Electronics" -> "Electronics"
     # "Amazon.com Best Sellers: The most popular items on Amazon" -> ""
     cleaned = re.sub(
-        r"^Amazon(?:\.com)? Best Sellers:?\s*(?:Best\s+|The most popular items on Amazon)?",
+        r"^Amazon(?:\.[a-z.]+)? Best Sellers:?\s*(?:Best\s+|The most popular items (?:on Amazon|in ))?",
         "", title,
     ).strip()
+    cleaned = re.sub(r"^The most popular items in ", "", cleaned)
     return cleaned
 
 
 def normalize_url(url: str) -> str:
     """Strip ref= tracking segments from Amazon URLs for deduplication."""
-    absolute = urljoin("https://www.amazon.com", url)
+    absolute = urljoin(f"https://{DOMAIN}", url)
     parts = absolute.split("/")
     return "/".join(p for p in parts if not p.startswith("ref="))
 
@@ -189,6 +221,23 @@ def crawl() -> None:
 
 
 def main():
+    global MARKETPLACE, DOMAIN, SEED_URL, STATE_FILE
+
+    parser = argparse.ArgumentParser(description="Crawl Amazon product categories")
+    parser.add_argument(
+        "-m", "--marketplace",
+        choices=sorted(MARKETPLACES),
+        default=MARKETPLACE,
+        help=f"Amazon marketplace to crawl (default: {MARKETPLACE})",
+    )
+    args = parser.parse_args()
+
+    MARKETPLACE = args.marketplace
+    DOMAIN = MARKETPLACES[MARKETPLACE]
+    SEED_URL = f"https://{DOMAIN}/Best-Sellers/zgbs"
+    STATE_FILE = OUTPUT_DIR / f"categories_{MARKETPLACE}.csv"
+
+    print(f"Marketplace: {MARKETPLACE} ({DOMAIN})")
     crawl()
 
 
