@@ -24,7 +24,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-API_KEY = os.environ["ASINSPOTLIGHT_API_KEY"]
 API_URL = os.environ.get("ASINSPOTLIGHT_API_URL", "https://api.asinspotlight.com")
 
 MARKETPLACES = {
@@ -107,7 +106,7 @@ def load_state() -> dict[str, dict]:
 
 def save_state(state: dict[str, dict]) -> None:
     """Persist crawl state to CSV."""
-    OUTPUT_DIR.mkdir(exist_ok=True)
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     rows = sorted(state.values(), key=lambda row: (int(row["depth"]), row["category_name_path"], row["placement_id"]))
     with open(STATE_FILE, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
@@ -177,10 +176,11 @@ def clean_category_name(title: str) -> str:
 
 def fetch_and_parse(url: str) -> dict:
     """Send a URL to the ASINSpotlight API and return parsed category data."""
+    api_key = os.environ["ASINSPOTLIGHT_API_KEY"]
     resp = httpx.post(
         f"{API_URL}/v1/scrape",
         json={"url": url, "marketplace": MARKETPLACE},
-        headers={"X-Api-Key": API_KEY},
+        headers={"X-Api-Key": api_key},
         timeout=90,
     )
     if resp.status_code != 200:
@@ -282,6 +282,15 @@ def explicit_sub_departments(items: list[dict], valid_slugs: set[str], seen_ids:
             continue
         seen_ids.add(category_id)
         children.append(item)
+    return children
+
+
+def crawlable_children(row: dict, result: dict, valid_slugs: set[str]) -> list[dict]:
+    """Return all child departments that should be enqueued for a placement."""
+    departments = result.get("departments", [])
+    children = child_departments(row, departments, valid_slugs)
+    seen_child_ids = {extract_category_id(item["link"]) for item in children}
+    children.extend(explicit_sub_departments(result.get("sub_departments", []), valid_slugs, seen_child_ids))
     return children
 
 
@@ -445,11 +454,7 @@ def crawl(fresh: bool = False, max_placements: int | None = None) -> None:
             departments = result.get("departments", [])
             learn_seed_slugs(row, departments, valid_slugs)
 
-            children = child_departments(row, departments, valid_slugs)
-            seen_child_ids = {extract_category_id(item["link"]) for item in children}
-            children.extend(explicit_sub_departments(result.get("sub_departments", []), valid_slugs, seen_child_ids))
-
-            for item in children:
+            for item in crawlable_children(row, result, valid_slugs):
                 enqueue_child(state, row, item)
 
             row["status"] = "done"
