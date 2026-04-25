@@ -11,7 +11,9 @@ Discovers all Amazon product categories by recursively crawling the Best Sellers
 
 ## How it works
 
-The tool starts at Amazon's top-level Best Sellers page and recursively follows every category link. For each page, the ASINSpotlight Scraping API handles fetching, proxy rotation, and HTML parsing — returning structured JSON with category names and links. The crawler just manages the queue and writes results to CSV.
+The tool starts at Amazon's top-level Best Sellers page and recursively follows real child category links. For each page, the ASINSpotlight Scraping API handles fetching, proxy rotation, and HTML parsing — returning structured JSON with category names and links. The crawler manages the queue and writes category placements to CSV.
+
+Amazon can list the same category under multiple parents, so the CSV preserves each placement separately. Use `placement_id` and `parent_placement_id` to rebuild the tree; `category_id` remains Amazon's category identifier and may appear in more than one branch.
 
 ## ASINSpotlight Scraping API
 
@@ -33,6 +35,12 @@ cp .env.example .env
 # Add your API key to .env
 
 python crawl.py
+```
+
+If you have an older flat CSV in `output/`, start a new placement crawl with:
+
+```bash
+python crawl.py --fresh
 ```
 
 ### Other marketplaces
